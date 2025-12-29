@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, Plus, Minus, Trash2, CreditCard, Banknote, PackageOpen, ShoppingCart, ScanLine, CheckCircle2 } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, CreditCard, Banknote, PackageOpen, ShoppingCart, ScanLine, CheckCircle2, Truck, ToggleLeft, ToggleRight } from 'lucide-react';
 import { Product, CartItem, Sale } from '../types';
 import { CATEGORIES } from '../constants';
 import Receipt from './Receipt';
@@ -12,6 +12,10 @@ interface POSProps {
   removeFromCart: (id: string) => void;
   updateCartQuantity: (id: string, delta: number) => void;
   processCheckout: (method: 'Cash' | 'Card') => Sale | undefined;
+  deliveryEnabled: boolean;
+  setDeliveryEnabled: (enabled: boolean) => void;
+  deliveryPrice: number;
+  setDeliveryPrice: (price: number) => void;
 }
 
 const POS: React.FC<POSProps> = ({ 
@@ -20,7 +24,11 @@ const POS: React.FC<POSProps> = ({
   addToCart, 
   removeFromCart, 
   updateCartQuantity,
-  processCheckout 
+  processCheckout,
+  deliveryEnabled,
+  setDeliveryEnabled,
+  deliveryPrice,
+  setDeliveryPrice
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [barcodeInput, setBarcodeInput] = useState('');
@@ -66,8 +74,7 @@ const POS: React.FC<POSProps> = ({
   };
 
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const tax = subtotal * 0.08; 
-  const total = subtotal + tax;
+  const total = subtotal + (deliveryEnabled ? deliveryPrice : 0);
 
   return (
     <div className="h-full flex flex-col md:flex-row bg-slate-100 overflow-hidden relative">
@@ -211,15 +218,48 @@ const POS: React.FC<POSProps> = ({
         </div>
 
         <div className="p-6 bg-slate-900 text-white rounded-t-3xl shadow-[0_-20px_50px_rgba(0,0,0,0.1)] space-y-4">
+          {/* Delivery Toggle & Input */}
+          <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10 group">
+             <div className="flex items-center gap-3">
+                <Truck className={`w-5 h-5 ${deliveryEnabled ? 'text-teal-400' : 'text-slate-500'}`} />
+                <span className="text-xs font-bold uppercase tracking-widest text-slate-300">Delivery</span>
+             </div>
+             <div className="flex items-center gap-3">
+                {deliveryEnabled && (
+                  <div className="flex items-center bg-white/10 rounded-lg px-2 py-1 border border-white/20">
+                    <span className="text-[10px] font-bold text-slate-400 mr-1">$</span>
+                    <input 
+                      type="number" 
+                      value={deliveryPrice} 
+                      onChange={(e) => setDeliveryPrice(parseFloat(e.target.value) || 0)}
+                      className="w-12 bg-transparent text-xs font-black text-teal-400 outline-none p-0 border-none"
+                    />
+                  </div>
+                )}
+                <button 
+                  onClick={() => setDeliveryEnabled(!deliveryEnabled)}
+                  className="transition-all active:scale-90"
+                >
+                  {deliveryEnabled ? (
+                    <ToggleRight className="w-8 h-8 text-teal-500" />
+                  ) : (
+                    <ToggleLeft className="w-8 h-8 text-slate-600" />
+                  )}
+                </button>
+             </div>
+          </div>
+
           <div className="space-y-2 text-xs font-bold uppercase tracking-wider text-slate-400">
             <div className="flex justify-between">
               <span>Subtotal</span>
               <span className="text-white">${subtotal.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between">
-              <span>Tax (8%)</span>
-              <span className="text-white">${tax.toFixed(2)}</span>
-            </div>
+            {deliveryEnabled && (
+              <div className="flex justify-between text-teal-400">
+                <span>Delivery Fee</span>
+                <span>${deliveryPrice.toFixed(2)}</span>
+              </div>
+            )}
             <div className="flex justify-between text-2xl font-black text-white pt-2 border-t border-white/10 mt-2">
               <span className="italic">TOTAL</span>
               <span className="text-teal-400 font-mono tracking-tighter">${total.toFixed(2)}</span>

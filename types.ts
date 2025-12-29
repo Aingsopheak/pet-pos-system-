@@ -20,7 +20,7 @@ export interface Sale {
   timestamp: number;
   items: CartItem[];
   subtotal: number;
-  tax: number;
+  deliveryFee: number;
   total: number;
   paymentMethod: 'Cash' | 'Card';
 }

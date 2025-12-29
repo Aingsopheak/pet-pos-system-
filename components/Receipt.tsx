@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Sale } from '../types';
-import { Dog, Printer, X } from 'lucide-react';
+import { Dog, Printer, X, Truck } from 'lucide-react';
 
 interface ReceiptProps {
   sale: Sale;
@@ -69,11 +69,13 @@ const Receipt: React.FC<ReceiptProps> = ({ sale, onClose }) => {
           <span>Subtotal</span>
           <span>${sale.subtotal.toFixed(2)}</span>
         </div>
-        <div className="flex justify-between text-xs text-slate-500">
-          <span>Tax (8.0%)</span>
-          <span>${sale.tax.toFixed(2)}</span>
-        </div>
-        <div className="flex justify-between text-lg font-black text-slate-900 pt-2">
+        {sale.deliveryFee > 0 && (
+          <div className="flex justify-between text-xs text-teal-600 font-medium">
+            <span className="flex items-center gap-1"><Truck className="w-3 h-3" /> Delivery Fee</span>
+            <span>${sale.deliveryFee.toFixed(2)}</span>
+          </div>
+        )}
+        <div className="flex justify-between text-lg font-black text-slate-900 pt-2 border-t border-slate-50">
           <span>TOTAL</span>
           <span>${sale.total.toFixed(2)}</span>
         </div>
@@ -81,7 +83,7 @@ const Receipt: React.FC<ReceiptProps> = ({ sale, onClose }) => {
 
       <div className="mt-8 pt-6 border-t border-dashed border-slate-200 text-center">
         <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest mb-1">Thank you for shopping!</p>
-        <p className="text-[10px] text-slate-400">All sales of live animals are final.</p>
+        <p className="text-[10px] text-slate-400">All sales are final.</p>
         
         <div className="mt-6 flex flex-col gap-2 print:hidden">
           <button 

@@ -16,11 +16,15 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
   const [sales, setSales] = useState<Sale[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
+  
+  // Delivery State
+  const [deliveryEnabled, setDeliveryEnabled] = useState(false);
+  const [deliveryPrice, setDeliveryPrice] = useState(5.00);
 
   // Derived state
   const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const tax = subtotal * 0.08;
-  const totalCartValue = subtotal + tax;
+  const currentDeliveryFee = deliveryEnabled ? deliveryPrice : 0;
+  const totalCartValue = subtotal + currentDeliveryFee;
 
   const addToCart = useCallback((product: Product) => {
     if (product.stock <= 0) return;
@@ -55,13 +59,13 @@ export default function App() {
   const processCheckout = useCallback((paymentMethod: 'Cash' | 'Card') => {
     if (cart.length === 0) return;
 
-    // Create a new sale record with full pricing details
+    // Create a new sale record with delivery details instead of tax
     const newSale: Sale = {
       id: Math.random().toString(36).substr(2, 9),
       timestamp: Date.now(),
       items: [...cart],
       subtotal: subtotal,
-      tax: tax,
+      deliveryFee: currentDeliveryFee,
       total: totalCartValue,
       paymentMethod,
     };
@@ -82,10 +86,10 @@ export default function App() {
 
     setSales(prev => [newSale, ...prev]);
     setCart([]);
+    setDeliveryEnabled(false); // Reset delivery toggle for next sale
     
-    // Returning the sale so POS can show receipt
     return newSale;
-  }, [cart, subtotal, tax, totalCartValue]);
+  }, [cart, subtotal, currentDeliveryFee, totalCartValue]);
 
   const updateProduct = (updatedProduct: Product) => {
     setProducts(prev => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
@@ -127,6 +131,10 @@ export default function App() {
             removeFromCart={removeFromCart}
             updateCartQuantity={updateCartQuantity}
             processCheckout={processCheckout}
+            deliveryEnabled={deliveryEnabled}
+            setDeliveryEnabled={setDeliveryEnabled}
+            deliveryPrice={deliveryPrice}
+            setDeliveryPrice={setDeliveryPrice}
           />
         )}
 
@@ -167,7 +175,7 @@ export default function App() {
           <span>Low Stock: {products.filter(p => p.status !== 'In Stock').length}</span>
         </div>
         <div>
-          <span>PawPrint Terminal v1.1.0</span>
+          <span>PawPrint Terminal v1.2.0</span>
         </div>
       </footer>
     </div>
