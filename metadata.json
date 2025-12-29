@@ -1,0 +1,7 @@
+{
+  "name": "PawPrint POS & Inventory",
+  "description": "Professional Pet Store POS with Barcode Scanning and Advanced Sales Reporting.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
