@@ -5,14 +5,19 @@ export interface Product {
   category: string;
   status: 'In Stock' | 'Low Stock' | 'Out of Stock';
   stock: number;
+  threshold?: number;
   supplierName: string;
   price: number;
   barcode: string;
   image?: string;
+  discountType?: 'percent' | 'fixed';
+  discountValue?: number;
 }
 
 export interface CartItem extends Product {
   quantity: number;
+  discountType?: 'percent' | 'fixed';
+  discountValue?: number;
 }
 
 export interface Sale {
@@ -21,6 +26,7 @@ export interface Sale {
   items: CartItem[];
   subtotal: number;
   deliveryFee: number;
+  totalDiscount: number;
   total: number;
   paymentMethod: 'Cash' | 'Card';
 }

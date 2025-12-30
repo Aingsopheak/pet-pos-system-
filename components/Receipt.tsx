@@ -1,7 +1,7 @@
 
 import React from 'react';
-import { Sale } from '../types';
-import { Dog, Printer, X, Truck } from 'lucide-react';
+import { Sale, CartItem } from '../types';
+import { Dog, Printer, X, Truck, Tag } from 'lucide-react';
 
 interface ReceiptProps {
   sale: Sale;
@@ -11,6 +11,16 @@ interface ReceiptProps {
 const Receipt: React.FC<ReceiptProps> = ({ sale, onClose }) => {
   const handlePrint = () => {
     window.print();
+  };
+
+  const getItemDiscountedTotal = (item: CartItem) => {
+    const baseTotal = item.price * item.quantity;
+    if (!item.discountValue || item.discountValue <= 0) return baseTotal;
+    if (item.discountType === 'percent') {
+      return baseTotal * (1 - item.discountValue / 100);
+    } else {
+      return Math.max(0, baseTotal - item.discountValue);
+    }
   };
 
   return (
@@ -55,13 +65,27 @@ const Receipt: React.FC<ReceiptProps> = ({ sale, onClose }) => {
           <span className="text-center">QTY</span>
           <span className="text-right">PRICE</span>
         </div>
-        {sale.items.map((item, idx) => (
-          <div key={idx} className="grid grid-cols-4 text-xs text-slate-700">
-            <span className="col-span-2 leading-tight">{item.name}</span>
-            <span className="text-center text-slate-400">x{item.quantity}</span>
-            <span className="text-right font-medium">${(item.price * item.quantity).toFixed(2)}</span>
-          </div>
-        ))}
+        {sale.items.map((item, idx) => {
+          const itemTotal = getItemDiscountedTotal(item);
+          const itemBaseTotal = item.price * item.quantity;
+          const discount = itemBaseTotal - itemTotal;
+
+          return (
+            <div key={idx} className="flex flex-col gap-0.5 border-b border-slate-50 pb-1">
+              <div className="grid grid-cols-4 text-xs text-slate-700">
+                <span className="col-span-2 leading-tight">{item.name}</span>
+                <span className="text-center text-slate-400">x{item.quantity}</span>
+                <span className="text-right font-medium">${itemBaseTotal.toFixed(2)}</span>
+              </div>
+              {discount > 0 && (
+                <div className="flex justify-between text-[10px] text-amber-600 font-bold italic ml-2">
+                  <span>- Item Discount ({item.discountType === 'percent' ? `${item.discountValue}%` : `$${item.discountValue}`})</span>
+                  <span>-${discount.toFixed(2)}</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <div className="border-t border-slate-100 pt-4 space-y-1.5">
@@ -69,10 +93,16 @@ const Receipt: React.FC<ReceiptProps> = ({ sale, onClose }) => {
           <span>Subtotal</span>
           <span>${sale.subtotal.toFixed(2)}</span>
         </div>
+        {sale.totalDiscount > 0 && (
+          <div className="flex justify-between text-xs text-amber-600 font-medium">
+            <span className="flex items-center gap-1"><Tag className="w-3 h-3" /> Total Discount</span>
+            <span>-${sale.totalDiscount.toFixed(2)}</span>
+          </div>
+        )}
         {sale.deliveryFee > 0 && (
           <div className="flex justify-between text-xs text-teal-600 font-medium">
             <span className="flex items-center gap-1"><Truck className="w-3 h-3" /> Delivery Fee</span>
-            <span>${sale.deliveryFee.toFixed(2)}</span>
+            <span>+${sale.deliveryFee.toFixed(2)}</span>
           </div>
         )}
         <div className="flex justify-between text-lg font-black text-slate-900 pt-2 border-t border-slate-50">

@@ -2,7 +2,8 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { 
   Edit2, Trash2, Plus, Search, FileDown, Scan, FileUp, 
-  ArrowUpDown, ChevronUp, ChevronDown, X, Camera, Upload, Image as ImageIcon
+  ArrowUpDown, ChevronUp, ChevronDown, X, Camera, Upload, Image as ImageIcon,
+  Settings, Bell, Info, Tag, Zap, AlertTriangle, Percent, DollarSign, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { Product } from '../types';
 import { CATEGORIES } from '../constants';
@@ -13,39 +14,59 @@ interface InventoryProps {
   onDelete: (id: string) => void;
   onAdd: (product: Product) => void;
   onBulkImport: (products: Product[]) => void;
+  stockThreshold: number;
+  setStockThreshold: (val: number) => void;
 }
 
-type SortKey = 'name' | 'barcode' | 'category' | 'stock';
+type SortKey = 'name' | 'barcode' | 'category' | 'stock' | 'price' | 'discountValue';
 type SortDirection = 'asc' | 'desc' | null;
 
-const Inventory: React.FC<InventoryProps> = ({ products, onUpdate, onDelete, onAdd, onBulkImport }) => {
+const Inventory: React.FC<InventoryProps> = ({ 
+  products, 
+  onUpdate, 
+  onDelete, 
+  onAdd, 
+  onBulkImport,
+  stockThreshold,
+  setStockThreshold
+}) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection } | null>(null);
   
-  // Form State for dynamic updates (Images/Barcodes)
+  // Pagination state
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
+
   const [formImage, setFormImage] = useState<string>('');
   const [formBarcode, setFormBarcode] = useState<string>('');
+  const [formDiscountType, setFormDiscountType] = useState<'percent' | 'fixed'>('percent');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Initialize form when editing
+  // Reset to first page when search or page size changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, itemsPerPage]);
+
   useEffect(() => {
     if (editingProduct) {
       setFormImage(editingProduct.image || '');
       setFormBarcode(editingProduct.barcode || '');
+      setFormDiscountType(editingProduct.discountType || 'percent');
     } else {
       setFormImage('');
       setFormBarcode('');
+      setFormDiscountType('percent');
     }
   }, [editingProduct, isModalOpen]);
 
-  // Barcode Scanner Logic
   useEffect(() => {
     let stream: MediaStream | null = null;
     let interval: number | null = null;
@@ -57,8 +78,6 @@ const Inventory: React.FC<InventoryProps> = ({ products, onUpdate, onDelete, onA
           videoRef.current.srcObject = stream;
         }
 
-        // Use Browser's Native Barcode Detector if available
-        // Note: Currently supported in Chrome/Edge
         if ('BarcodeDetector' in window) {
           const barcodeDetector = new (window as any).BarcodeDetector({
             formats: ['code_128', 'ean_13', 'qr_code'],
@@ -77,8 +96,6 @@ const Inventory: React.FC<InventoryProps> = ({ products, onUpdate, onDelete, onA
               }
             }
           }, 500);
-        } else {
-          console.warn("BarcodeDetector API not supported in this browser.");
         }
       } catch (err) {
         console.error("Camera access denied:", err);
@@ -104,25 +121,35 @@ const Inventory: React.FC<InventoryProps> = ({ products, onUpdate, onDelete, onA
     setSortConfig(direction ? { key, direction } : null);
   };
 
-  const processedProducts = useMemo(() => {
-    let items = [...products].filter(p => 
+  const filteredItems = useMemo(() => {
+    return products.filter(p => 
       p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.supplierName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.barcode.toLowerCase().includes(searchTerm.toLowerCase())
     );
+  }, [products, searchTerm]);
 
+  const sortedItems = useMemo(() => {
+    let items = [...filteredItems];
     if (sortConfig && sortConfig.direction) {
       items.sort((a, b) => {
-        const aValue = a[sortConfig.key];
-        const bValue = b[sortConfig.key];
+        const aValue = (a[sortConfig.key] ?? 0) as any;
+        const bValue = (b[sortConfig.key] ?? 0) as any;
         if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
         if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
         return 0;
       });
     }
     return items;
-  }, [products, searchTerm, sortConfig]);
+  }, [filteredItems, sortConfig]);
+
+  // Paginated Results
+  const totalPages = Math.ceil(sortedItems.length / itemsPerPage);
+  const paginatedProducts = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return sortedItems.slice(start, start + itemsPerPage);
+  }, [sortedItems, currentPage, itemsPerPage]);
 
   const getSortIcon = (key: SortKey) => {
     if (!sortConfig || sortConfig.key !== key) return <ArrowUpDown className="w-3.5 h-3.5 opacity-30" />;
@@ -146,6 +173,8 @@ const Inventory: React.FC<InventoryProps> = ({ products, onUpdate, onDelete, onA
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const stockVal = parseInt(formData.get('stock') as string) || 0;
+    const thresholdVal = formData.get('threshold') ? parseInt(formData.get('threshold') as string) : undefined;
+    const discountVal = formData.get('discountValue') ? parseFloat(formData.get('discountValue') as string) : 0;
     
     const data: any = {
       name: formData.get('name'),
@@ -153,8 +182,10 @@ const Inventory: React.FC<InventoryProps> = ({ products, onUpdate, onDelete, onA
       barcode: formBarcode,
       price: parseFloat(formData.get('price') as string),
       stock: stockVal,
+      threshold: thresholdVal,
+      discountType: formDiscountType,
+      discountValue: discountVal,
       supplierName: formData.get('supplierName') || 'Internal',
-      status: stockVal === 0 ? 'Out of Stock' : stockVal < 10 ? 'Low Stock' : 'In Stock',
       image: formImage || `https://picsum.photos/seed/${formBarcode}/200/200`
     };
 
@@ -167,65 +198,111 @@ const Inventory: React.FC<InventoryProps> = ({ products, onUpdate, onDelete, onA
     closeModals();
   };
 
+  const handleDeleteConfirmed = () => {
+    if (deleteConfirmationId) {
+      onDelete(deleteConfirmationId);
+      setDeleteConfirmationId(null);
+    }
+  };
+
   const closeModals = () => {
     setIsModalOpen(false);
     setIsScannerOpen(false);
+    setIsSettingsOpen(false);
+    setDeleteConfirmationId(null);
     setEditingProduct(null);
     setFormImage('');
     setFormBarcode('');
+    setFormDiscountType('percent');
   };
 
   const exportCSV = () => {
-    const headers = ['Product', 'Barcode', 'Category', 'Status', 'Stock', 'Supplier Name', 'Price'];
+    const headers = ['Product', 'Barcode', 'Category', 'Status', 'Stock', 'Threshold', 'Supplier Name', 'Price', 'Discount Type', 'Discount Value'];
     const rows = products.map(p => [
-      `"${p.name}"`, p.barcode, p.category, p.status, p.stock, `"${p.supplierName}"`, p.price
+      `"${p.name}"`, `"${p.barcode}"`, `"${p.category}"`, `"${p.status}"`, p.stock, p.threshold ?? 'Global', `"${p.supplierName}"`, p.price, p.discountType ?? 'percent', p.discountValue ?? 0
     ]);
-    const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
+    const csvContent = headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodeURI(csvContent));
+    link.setAttribute("href", url);
     link.setAttribute("download", "pet_store_inventory.csv");
     document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
   };
 
   const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target?.result as string;
-      const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
-      if (lines.length < 2) return;
+      const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
+      if (lines.length < 2) {
+        alert("The CSV file seems to be empty or missing data rows.");
+        return;
+      }
+
       const parseCSVLine = (line: string) => {
         const result = [];
         let cur = '', inQuotes = false;
         for (let i = 0; i < line.length; i++) {
           const char = line[i];
           if (char === '"') inQuotes = !inQuotes;
-          else if (char === ',' && !inQuotes) { result.push(cur.trim()); cur = ''; }
+          else if (char === ',' && !inQuotes) { 
+            result.push(cur.trim().replace(/^"|"$/g, '')); 
+            cur = ''; 
+          }
           else cur += char;
         }
-        result.push(cur.trim());
+        result.push(cur.trim().replace(/^"|"$/g, ''));
         return result;
       };
+
       const importedItems: Product[] = [];
+      const timestamp = Date.now();
+
       for (let i = 1; i < lines.length; i++) {
         const cols = parseCSVLine(lines[i]);
-        if (cols.length < 6) continue;
+        if (cols.length < 7) continue;
+
+        const name = cols[0];
+        const barcode = cols[1];
+        const category = cols[2];
         const stock = parseInt(cols[4]) || 0;
+        const threshold = cols[5] && !isNaN(parseInt(cols[5])) ? parseInt(cols[5]) : undefined;
+        const supplierName = cols[6];
+        const price = parseFloat(cols[7]) || 0;
+        const discType = (cols[8] as 'percent' | 'fixed') || 'percent';
+        const discVal = parseFloat(cols[9]) || 0;
+
+        if (!name || !barcode) continue;
+
         importedItems.push({
-          id: `imp-${Date.now()}-${i}`,
-          name: cols[0],
-          barcode: cols[1],
-          category: CATEGORIES.includes(cols[2]) ? cols[2] : CATEGORIES[1],
+          id: `imp-${timestamp}-${i}`,
+          name,
+          barcode,
+          category: CATEGORIES.includes(category) ? category : CATEGORIES[1],
           stock,
-          supplierName: cols[5],
-          price: parseFloat(cols[6]) || 0,
-          status: stock === 0 ? 'Out of Stock' : stock < 10 ? 'Low Stock' : 'In Stock',
-          image: `https://picsum.photos/seed/${cols[1]}/200/200`
+          threshold,
+          supplierName,
+          price,
+          discountType: discType,
+          discountValue: discVal,
+          status: stock === 0 ? 'Out of Stock' : stock <= (threshold ?? stockThreshold) ? 'Low Stock' : 'In Stock',
+          image: `https://picsum.photos/seed/${barcode}/200/200`
         });
       }
-      onBulkImport(importedItems);
+
+      if (importedItems.length > 0) {
+        onBulkImport(importedItems);
+        alert(`Successfully imported ${importedItems.length} products.`);
+      } else {
+        alert("No valid products were found in the CSV file.");
+      }
+
       if (fileInputRef.current) fileInputRef.current.value = "";
     };
     reader.readAsText(file);
@@ -239,6 +316,13 @@ const Inventory: React.FC<InventoryProps> = ({ products, onUpdate, onDelete, onA
           <p className="text-slate-500">Manage products, barcodes, and stock levels</p>
         </div>
         <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setIsSettingsOpen(true)}
+            className="p-2 text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 shadow-sm transition-all"
+            title="Global Notification Settings"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
           <input type="file" ref={fileInputRef} onChange={handleImportCSV} accept=".csv" className="hidden" />
           <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all font-medium text-sm">
             <FileUp className="w-4 h-4" /> Import CSV
@@ -268,12 +352,12 @@ const Inventory: React.FC<InventoryProps> = ({ products, onUpdate, onDelete, onA
             />
           </div>
           <div className="text-xs text-slate-500 font-medium">
-            Showing {processedProducts.length} items
+            Total Items: {sortedItems.length}
           </div>
         </div>
 
         <div className="flex-1 overflow-auto">
-          <table className="w-full text-left border-collapse min-w-[900px]">
+          <table className="w-full text-left border-collapse min-w-[1000px]">
             <thead className="sticky top-0 bg-white z-10 shadow-sm">
               <tr className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 <th className="px-6 py-4"><button onClick={() => handleSort('name')} className="flex items-center gap-2 hover:text-teal-600 group">Product Name {getSortIcon('name')}</button></th>
@@ -281,17 +365,25 @@ const Inventory: React.FC<InventoryProps> = ({ products, onUpdate, onDelete, onA
                 <th className="px-6 py-4"><button onClick={() => handleSort('category')} className="flex items-center gap-2 hover:text-teal-600 group">Category {getSortIcon('category')}</button></th>
                 <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4 text-center"><button onClick={() => handleSort('stock')} className="flex items-center gap-2 mx-auto hover:text-teal-600 group">Stock {getSortIcon('stock')}</button></th>
-                <th className="px-6 py-4">Price</th>
+                <th className="px-6 py-4"><button onClick={() => handleSort('price')} className="flex items-center gap-2 hover:text-teal-600 group">Price {getSortIcon('price')}</button></th>
+                <th className="px-6 py-4"><button onClick={() => handleSort('discountValue')} className="flex items-center gap-2 hover:text-teal-600 group">Discount {getSortIcon('discountValue')}</button></th>
                 <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {processedProducts.map(product => {
+              {paginatedProducts.map(product => {
+                const effectiveThreshold = product.threshold ?? stockThreshold;
+                const isLowStock = product.stock <= effectiveThreshold && product.stock > 0;
+                const hasCatalogDiscount = product.discountValue !== undefined && product.discountValue > 0;
+                
                 return (
                   <tr key={product.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <img src={product.image} className="w-8 h-8 rounded-lg bg-slate-100 object-cover border border-slate-200" />
+                        <div className="relative">
+                          <img src={product.image} className="w-8 h-8 rounded-lg bg-slate-100 object-cover border border-slate-200" />
+                          {hasCatalogDiscount && <Tag className="absolute -top-1 -right-1 w-3 h-3 text-amber-500 fill-amber-500" />}
+                        </div>
                         <span className="font-medium text-slate-800 text-sm">{product.name}</span>
                       </div>
                     </td>
@@ -299,28 +391,160 @@ const Inventory: React.FC<InventoryProps> = ({ products, onUpdate, onDelete, onA
                     <td className="px-6 py-4"><span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-md text-[10px] font-bold">{product.category}</span></td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
-                        product.status === 'In Stock' ? 'bg-green-100 text-green-700' :
-                        product.status === 'Low Stock' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                        product.stock > effectiveThreshold ? 'bg-green-100 text-green-700' :
+                        product.stock > 0 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
                       }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${product.status === 'In Stock' ? 'bg-green-500' : product.status === 'Low Stock' ? 'bg-amber-500' : 'bg-red-500'}`} />
-                        {product.status}
+                        <span className={`w-1.5 h-1.5 rounded-full ${product.stock > effectiveThreshold ? 'bg-green-500' : product.stock > 0 ? 'bg-amber-500' : 'bg-red-500'}`} />
+                        {product.stock === 0 ? 'Out of Stock' : product.stock <= effectiveThreshold ? 'Low Stock' : 'In Stock'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-center font-semibold text-slate-700">{product.stock}</td>
-                    <td className="px-6 py-4 font-bold text-slate-900">${product.price.toFixed(2)}</td>
+                    <td className="px-6 py-4 text-center">
+                      <div className="flex flex-col items-center">
+                        <span className={`font-semibold text-sm ${isLowStock ? 'text-amber-600' : product.stock === 0 ? 'text-red-600' : 'text-slate-700'}`}>
+                          {product.stock}
+                        </span>
+                        {isLowStock && (
+                          <span className="text-[8px] font-black text-amber-500 uppercase tracking-tighter mt-0.5" title={`Threshold: ${effectiveThreshold}`}>Below Limit</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="font-bold text-slate-900">${product.price.toFixed(2)}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      {hasCatalogDiscount ? (
+                        <div className="flex items-center gap-1.5 text-teal-600 font-bold text-xs uppercase">
+                          <Zap className="w-3 h-3 fill-current" />
+                          {product.discountValue}{product.discountType === 'percent' ? '%' : '$'} Off
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 font-medium text-xs italic">None</span>
+                      )}
+                    </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button onClick={() => { setEditingProduct(product); setIsModalOpen(true); }} className="p-2 text-slate-400 hover:text-teal-600 transition-colors"><Edit2 className="w-4 h-4" /></button>
-                        <button onClick={() => onDelete(product.id)} className="p-2 text-slate-400 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                        <button onClick={() => setDeleteConfirmationId(product.id)} className="p-2 text-slate-400 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </td>
                   </tr>
                 );
               })}
+              {paginatedProducts.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="py-20 text-center text-slate-400 italic">No products found matching your search.</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Footer */}
+        <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50/30">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Rows per page:</span>
+              <select 
+                value={itemsPerPage}
+                onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-700 focus:ring-2 focus:ring-teal-500 outline-none transition-all shadow-sm"
+              >
+                {[10, 25, 50].map(size => (
+                  <option key={size} value={size}>{size}</option>
+                ))}
+              </select>
+            </div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              Showing {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, sortedItems.length)} of {sortedItems.length}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button 
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage(prev => prev - 1)}
+              className="p-2 bg-white border border-slate-200 rounded-lg text-slate-600 hover:text-teal-600 disabled:opacity-30 disabled:hover:text-slate-600 transition-all shadow-sm"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <div className="px-4 py-1 bg-white border border-slate-200 rounded-lg text-xs font-black text-slate-700 shadow-sm">
+              Page {currentPage} of {totalPages || 1}
+            </div>
+            <button 
+              disabled={currentPage >= totalPages}
+              onClick={() => setCurrentPage(prev => prev + 1)}
+              className="p-2 bg-white border border-slate-200 rounded-lg text-slate-600 hover:text-teal-600 disabled:opacity-30 disabled:hover:text-slate-600 transition-all shadow-sm"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmationId && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-8 text-center">
+              <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                <AlertTriangle className="w-10 h-10" />
+              </div>
+              <h3 className="text-xl font-black text-slate-900 mb-2 italic uppercase tracking-tight">Delete Product?</h3>
+              <p className="text-sm text-slate-500 mb-8">
+                Are you sure you want to remove <span className="font-bold text-slate-800">"{products.find(p => p.id === deleteConfirmationId)?.name}"</span>? 
+                This action cannot be undone and will affect your inventory logs.
+              </p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setDeleteConfirmationId(null)}
+                  className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-black text-sm uppercase tracking-widest transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleDeleteConfirmed}
+                  className="flex-1 py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-lg shadow-red-200"
+                >
+                  Yes, Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Threshold Settings Modal */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b border-slate-100 bg-teal-50/50 flex items-center justify-between">
+              <h3 className="font-black text-slate-800 flex items-center gap-2">
+                <Bell className="w-4 h-4 text-teal-600" />
+                Global Alert Settings
+              </h3>
+              <button onClick={closeModals} className="p-1 text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Global Stock Threshold</label>
+                <div className="flex items-center gap-3">
+                  <input 
+                    type="number" 
+                    value={stockThreshold} 
+                    onChange={(e) => setStockThreshold(parseInt(e.target.value) || 0)}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none font-bold"
+                  />
+                  <div className="text-[10px] text-slate-400 font-bold w-16 leading-tight">Units or less</div>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-2">Default limit for products without a specific threshold.</p>
+              </div>
+              <button onClick={closeModals} className="w-full py-3 bg-teal-600 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-teal-700 transition-all">
+                Save Preferences
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
@@ -336,7 +560,6 @@ const Inventory: React.FC<InventoryProps> = ({ products, onUpdate, onDelete, onA
             </div>
             
             <form onSubmit={handleSave} className="p-8 space-y-6">
-              {/* Image Selection Section */}
               <div className="flex flex-col items-center gap-4">
                 <div className="relative group cursor-pointer" onClick={() => photoInputRef.current?.click()}>
                    <div className="w-32 h-32 rounded-2xl bg-slate-100 border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden group-hover:border-teal-500 transition-all">
@@ -404,6 +627,70 @@ const Inventory: React.FC<InventoryProps> = ({ products, onUpdate, onDelete, onA
                 </div>
               </div>
 
+              {/* Enhanced Catalog Discount Selection */}
+              <div className="p-6 bg-amber-50 rounded-3xl border border-amber-100 shadow-inner space-y-4">
+                <label className="text-[10px] font-black text-amber-600 uppercase tracking-widest px-1 flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5 fill-current" />
+                  Catalog Discount Settings
+                </label>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-tight px-1">Discount Type</label>
+                    <div className="flex p-1 bg-white/60 border border-amber-200 rounded-xl">
+                      <button 
+                        type="button"
+                        onClick={() => setFormDiscountType('percent')}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${
+                          formDiscountType === 'percent' 
+                          ? 'bg-amber-500 text-white shadow-md' 
+                          : 'text-amber-700 hover:bg-amber-100'
+                        }`}
+                      >
+                        <Percent className="w-3 h-3" />
+                        Percentage
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => setFormDiscountType('fixed')}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${
+                          formDiscountType === 'fixed' 
+                          ? 'bg-amber-500 text-white shadow-md' 
+                          : 'text-amber-700 hover:bg-amber-100'
+                        }`}
+                      >
+                        <DollarSign className="w-3 h-3" />
+                        Amount
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-tight px-1">
+                      {formDiscountType === 'percent' ? 'Rate (%)' : 'Amount ($)'}
+                    </label>
+                    <div className="flex items-center bg-white border border-amber-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-amber-500 transition-all">
+                      <input 
+                        name="discountValue" 
+                        type="number" 
+                        step="0.01" 
+                        defaultValue={editingProduct?.discountValue || 0} 
+                        className="w-full px-4 py-3 bg-transparent border-none outline-none text-sm font-bold text-amber-600" 
+                        placeholder="0"
+                      />
+                      <div className="px-3 text-amber-300">
+                        {formDiscountType === 'percent' ? <Percent className="w-4 h-4" /> : <DollarSign className="w-4 h-4" />}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-tight px-1">Stock Alert Limit</label>
+                  <input name="threshold" type="number" defaultValue={editingProduct?.threshold || ''} placeholder={`Global: ${stockThreshold}`} className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none text-sm font-bold transition-all shadow-sm" />
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Stock Level</label>
@@ -418,7 +705,10 @@ const Inventory: React.FC<InventoryProps> = ({ products, onUpdate, onDelete, onA
               <div className="flex gap-4 pt-4">
                 <button type="button" onClick={closeModals} className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-black text-sm uppercase tracking-widest transition-all">Cancel</button>
                 <button type="submit" className="flex-1 py-4 text-white rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-xl bg-teal-600 hover:bg-teal-700 flex items-center justify-center gap-2">
-                  <CheckCircleIcon />
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                    <polyline points="22 4 12 14.01 9 11.01" />
+                  </svg>
                   {editingProduct ? 'Update Product' : 'Create Product'}
                 </button>
               </div>
@@ -427,7 +717,6 @@ const Inventory: React.FC<InventoryProps> = ({ products, onUpdate, onDelete, onA
         </div>
       )}
 
-      {/* Barcode Scanner Modal Overlay */}
       {isScannerOpen && (
         <div className="fixed inset-0 bg-black/90 flex flex-col items-center justify-center z-[100] p-6">
            <div className="relative w-full max-w-md aspect-[3/4] rounded-3xl overflow-hidden border-4 border-teal-500 shadow-2xl">
@@ -452,23 +741,10 @@ const Inventory: React.FC<InventoryProps> = ({ products, onUpdate, onDelete, onA
                 <X className="w-6 h-6" />
               </button>
            </div>
-           <div className="mt-8 text-center text-white/60">
-              <p className="text-xs font-bold uppercase tracking-widest">Position the scanner over a product barcode</p>
-              {!('BarcodeDetector' in window) && (
-                <p className="text-[10px] text-amber-400 mt-2 font-black uppercase">Native scanning not supported. Use manual entry or Chrome.</p>
-              )}
-           </div>
         </div>
       )}
     </div>
   );
 };
-
-const CheckCircleIcon = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-    <polyline points="22 4 12 14.01 9 11.01" />
-  </svg>
-);
 
 export default Inventory;

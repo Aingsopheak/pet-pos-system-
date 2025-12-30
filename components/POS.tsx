@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, Plus, Minus, Trash2, CreditCard, Banknote, PackageOpen, ShoppingCart, ScanLine, CheckCircle2, Truck, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, CreditCard, Banknote, PackageOpen, ShoppingCart, ScanLine, CheckCircle2, Truck, ToggleLeft, ToggleRight, Tag, Eye, EyeOff, Zap } from 'lucide-react';
 import { Product, CartItem, Sale } from '../types';
 import { CATEGORIES } from '../constants';
 import Receipt from './Receipt';
@@ -16,6 +16,12 @@ interface POSProps {
   setDeliveryEnabled: (enabled: boolean) => void;
   deliveryPrice: number;
   setDeliveryPrice: (price: number) => void;
+  globalDiscountEnabled: boolean;
+  setGlobalDiscountEnabled: (enabled: boolean) => void;
+  globalDiscountType: 'percent' | 'fixed';
+  setGlobalDiscountType: (type: 'percent' | 'fixed') => void;
+  globalDiscountValue: number;
+  setGlobalDiscountValue: (value: number) => void;
 }
 
 const POS: React.FC<POSProps> = ({ 
@@ -28,12 +34,19 @@ const POS: React.FC<POSProps> = ({
   deliveryEnabled,
   setDeliveryEnabled,
   deliveryPrice,
-  setDeliveryPrice
+  setDeliveryPrice,
+  globalDiscountEnabled,
+  setGlobalDiscountEnabled,
+  globalDiscountType,
+  setGlobalDiscountType,
+  globalDiscountValue,
+  setGlobalDiscountValue
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [barcodeInput, setBarcodeInput] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
   const [completedSale, setCompletedSale] = useState<Sale | null>(null);
+  const [showDiscountControls, setShowDiscountControls] = useState(true);
   
   const barcodeRef = useRef<HTMLInputElement>(null);
 
@@ -73,8 +86,28 @@ const POS: React.FC<POSProps> = ({
     }
   };
 
-  const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const total = subtotal + (deliveryEnabled ? deliveryPrice : 0);
+  const getItemDiscountedTotal = (item: CartItem) => {
+    const baseTotal = item.price * item.quantity;
+    if (!item.discountValue || item.discountValue <= 0) return baseTotal;
+    if (item.discountType === 'percent') {
+      return baseTotal * (1 - item.discountValue / 100);
+    } else {
+      // Assuming fixed catalog discount is per unit
+      return Math.max(0, (item.price - item.discountValue) * item.quantity);
+    }
+  };
+
+  const subtotal = cart.reduce((sum, item) => sum + getItemDiscountedTotal(item), 0);
+  
+  const globalDiscountAmount = useMemo(() => {
+    if (!globalDiscountEnabled || globalDiscountValue <= 0) return 0;
+    if (globalDiscountType === 'percent') {
+      return subtotal * (globalDiscountValue / 100);
+    }
+    return Math.min(subtotal, globalDiscountValue);
+  }, [globalDiscountEnabled, globalDiscountValue, globalDiscountType, subtotal]);
+
+  const total = Math.max(0, subtotal - globalDiscountAmount + (deliveryEnabled ? deliveryPrice : 0));
 
   return (
     <div className="h-full flex flex-col md:flex-row bg-slate-100 overflow-hidden relative">
@@ -119,37 +152,62 @@ const POS: React.FC<POSProps> = ({
         </div>
 
         <div className="flex-1 overflow-y-auto grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-10 pr-2 scrollbar-thin scrollbar-thumb-slate-200">
-          {filteredProducts.map(product => (
-            <div 
-              key={product.id}
-              onClick={() => product.stock > 0 && addToCart(product)}
-              className={`group bg-white rounded-2xl shadow-sm border border-transparent hover:border-teal-500 p-3 transition-all cursor-pointer flex flex-col h-full ${product.stock === 0 ? 'opacity-60 grayscale cursor-not-allowed' : 'active:scale-95'}`}
-            >
-              <div className="aspect-square rounded-xl overflow-hidden bg-slate-50 mb-3 relative">
-                <img 
-                  src={product.image || `https://picsum.photos/seed/${product.id}/200/200`} 
-                  alt={product.name}
-                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-                />
-                <div className="absolute bottom-1 right-1 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded text-[8px] font-mono font-bold text-slate-500">
-                  {product.barcode}
+          {filteredProducts.map(product => {
+            // Hide discount UI if catalog discount is 0
+            const hasCatalogDiscount = product.discountValue !== undefined && product.discountValue > 0;
+            const showDiscountUI = showDiscountControls && hasCatalogDiscount;
+
+            const salePrice = hasCatalogDiscount 
+              ? (product.discountType === 'percent' 
+                  ? product.price * (1 - product.discountValue! / 100) 
+                  : Math.max(0, product.price - product.discountValue!))
+              : product.price;
+
+            return (
+              <div 
+                key={product.id}
+                onClick={() => product.stock > 0 && addToCart(product)}
+                className={`group bg-white rounded-2xl shadow-sm border border-transparent hover:border-teal-500 p-3 transition-all cursor-pointer flex flex-col h-full ${product.stock === 0 ? 'opacity-60 grayscale cursor-not-allowed' : 'active:scale-95'}`}
+              >
+                <div className="aspect-square rounded-xl overflow-hidden bg-slate-50 mb-3 relative">
+                  <img 
+                    src={product.image || `https://picsum.photos/seed/${product.id}/200/200`} 
+                    alt={product.name}
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                  />
+                  {showDiscountUI && (
+                    <div className="absolute top-2 left-2 bg-amber-500 text-white text-[8px] font-black px-2 py-1 rounded-lg flex items-center gap-1 shadow-lg animate-pulse">
+                      <Zap className="w-2.5 h-2.5 fill-current" />
+                      DISCOUNT
+                    </div>
+                  )}
+                  <div className="absolute bottom-1 right-1 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded text-[8px] font-mono font-bold text-slate-500">
+                    {product.barcode}
+                  </div>
+                </div>
+                <h3 className="font-semibold text-slate-800 text-sm mb-1 line-clamp-2 leading-tight h-10">{product.name}</h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight mb-2">{product.category}</p>
+
+                <div className="mt-auto flex items-center justify-between">
+                  <div className="flex flex-col">
+                    {showDiscountUI && (
+                      <span className="text-[10px] text-slate-400 line-through decoration-red-400/50">${product.price.toFixed(2)}</span>
+                    )}
+                    <span className="text-teal-600 font-black text-base">
+                      ${(showDiscountControls ? salePrice : product.price).toFixed(2)}
+                    </span>
+                  </div>
+                  <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-tighter ${
+                    product.stock > 10 ? 'bg-green-100 text-green-700' : 
+                    product.stock > 0 ? 'bg-amber-100 text-amber-700' : 
+                    'bg-red-100 text-red-700'
+                  }`}>
+                    {product.stock > 0 ? `${product.stock} pcs` : 'Sold Out'}
+                  </span>
                 </div>
               </div>
-              <h3 className="font-semibold text-slate-800 text-sm mb-1 line-clamp-2 leading-tight h-10">{product.name}</h3>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight mb-2">{product.category}</p>
-
-              <div className="mt-auto flex items-center justify-between">
-                <span className="text-teal-600 font-black text-base">${product.price.toFixed(2)}</span>
-                <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-tighter ${
-                  product.stock > 10 ? 'bg-green-100 text-green-700' : 
-                  product.stock > 0 ? 'bg-amber-100 text-amber-700' : 
-                  'bg-red-100 text-red-700'
-                }`}>
-                  {product.stock > 0 ? `${product.stock} pcs` : 'Sold Out'}
-                </span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
           {filteredProducts.length === 0 && (
             <div className="col-span-full flex flex-col items-center justify-center py-20 text-slate-400 bg-white/50 rounded-3xl border-2 border-dashed border-slate-200">
               <PackageOpen className="w-16 h-16 mb-4 opacity-20" />
@@ -161,13 +219,25 @@ const POS: React.FC<POSProps> = ({
 
       {/* Cart Sidebar */}
       <div className="w-full md:w-96 bg-white border-l border-slate-200 flex flex-col shadow-2xl relative z-20">
-        <div className="p-6 border-b border-slate-100">
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between">
           <h2 className="text-xl font-black text-slate-800 flex items-center gap-2 italic">
             SHOPPING CART
             <span className="bg-teal-600 text-white text-[10px] px-2 py-1 rounded-md not-italic font-bold">
               {cart.reduce((sum, i) => sum + i.quantity, 0)}
             </span>
           </h2>
+          
+          <button 
+            onClick={() => setShowDiscountControls(!showDiscountControls)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${
+              showDiscountControls 
+              ? 'bg-amber-100 text-amber-700 border border-amber-200 shadow-sm' 
+              : 'bg-slate-100 text-slate-500 border border-slate-200 opacity-60 hover:opacity-100'
+            }`}
+          >
+            {showDiscountControls ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+            Promo: {showDiscountControls ? 'On' : 'Off'}
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -179,46 +249,90 @@ const POS: React.FC<POSProps> = ({
               <p className="text-center font-bold text-xs uppercase tracking-widest">Cart is empty</p>
             </div>
           ) : (
-            cart.map(item => (
-              <div key={item.id} className="flex gap-3 group animate-in slide-in-from-right-4 duration-200">
-                <div className="w-16 h-16 bg-slate-50 rounded-lg overflow-hidden flex-shrink-0 border border-slate-100">
-                   <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-bold text-slate-800 truncate leading-none mb-1">{item.name}</h4>
-                  <p className="text-xs text-slate-400 font-medium">${item.price.toFixed(2)} unit</p>
-                  <div className="flex items-center gap-2 mt-2">
-                    <button 
-                      onClick={() => updateCartQuantity(item.id, -1)}
-                      className="p-1 rounded-md hover:bg-slate-100 text-slate-600 border border-slate-200 transition-colors"
-                    >
-                      <Minus className="w-3 h-3" />
-                    </button>
-                    <span className="text-sm font-black w-6 text-center">{item.quantity}</span>
-                    <button 
-                      onClick={() => updateCartQuantity(item.id, 1)}
-                      className="p-1 rounded-md hover:bg-slate-100 text-slate-600 border border-slate-200 transition-colors"
-                    >
-                      <Plus className="w-3 h-3" />
-                    </button>
+            cart.map(item => {
+              const hasItemDiscount = item.discountValue !== undefined && item.discountValue > 0;
+              const showItemDiscount = showDiscountControls && hasItemDiscount;
+              
+              return (
+                <div key={item.id} className="flex flex-col gap-2 p-3 bg-slate-50/50 rounded-xl border border-slate-100 group animate-in slide-in-from-right-4 duration-200">
+                  <div className="flex gap-3">
+                    <div className="w-16 h-16 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0 border border-slate-200">
+                      <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-bold text-slate-800 truncate leading-none mb-1">{item.name}</h4>
+                      <p className="text-xs text-slate-400 font-medium">${item.price.toFixed(2)} unit</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <button onClick={() => updateCartQuantity(item.id, -1)} className="p-1 rounded-md hover:bg-slate-200 text-slate-600 border border-slate-200 transition-colors"><Minus className="w-3 h-3" /></button>
+                        <span className="text-sm font-black w-6 text-center">{item.quantity}</span>
+                        <button onClick={() => updateCartQuantity(item.id, 1)} className="p-1 rounded-md hover:bg-slate-200 text-slate-600 border border-slate-200 transition-colors"><Plus className="w-3 h-3" /></button>
+                      </div>
+                    </div>
+                    <div className="text-right flex flex-col justify-between items-end">
+                      <div className="flex flex-col">
+                        {showItemDiscount && (
+                          <span className="text-[10px] text-slate-400 line-through">${(item.price * item.quantity).toFixed(2)}</span>
+                        )}
+                        <p className="text-sm font-black text-slate-900">
+                          ${(showDiscountControls ? getItemDiscountedTotal(item) : item.price * item.quantity).toFixed(2)}
+                        </p>
+                      </div>
+                      <button onClick={() => removeFromCart(item.id)} className="p-1.5 text-slate-200 hover:text-red-500 hover:bg-red-50 rounded-md transition-all"><Trash2 className="w-4 h-4" /></button>
+                    </div>
                   </div>
+                  
+                  {/* Visual indication of fixed catalog discount if active */}
+                  {showItemDiscount && (
+                    <div className="text-[10px] font-bold text-teal-600 flex items-center gap-1 mt-1 bg-teal-50 w-fit px-1.5 py-0.5 rounded">
+                      <Zap className="w-3 h-3 fill-current" />
+                      {item.discountValue}{item.discountType === 'percent' ? '%' : '$'} Catalog Discount applied
+                    </div>
+                  )}
                 </div>
-                <div className="text-right flex flex-col justify-between items-end">
-                  <p className="text-sm font-black text-slate-900">${(item.price * item.quantity).toFixed(2)}</p>
-                  <button 
-                    onClick={() => removeFromCart(item.id)}
-                    className="p-1.5 text-slate-200 hover:text-red-500 hover:bg-red-50 rounded-md transition-all"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
 
         <div className="p-6 bg-slate-900 text-white rounded-t-3xl shadow-[0_-20px_50px_rgba(0,0,0,0.1)] space-y-4">
-          {/* Delivery Toggle & Input */}
+          
+          {showDiscountControls && (
+            <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10 animate-in fade-in slide-in-from-bottom-1">
+              <div className="flex items-center gap-3">
+                  <Tag className={`w-5 h-5 ${globalDiscountEnabled ? 'text-amber-400' : 'text-slate-500'}`} />
+                  <span className="text-xs font-bold uppercase tracking-widest text-slate-300">Global Discount</span>
+              </div>
+              <div className="flex items-center gap-3">
+                  {globalDiscountEnabled && (
+                    <div className="flex items-center bg-white/10 rounded-lg px-2 py-1 border border-white/20">
+                      <input 
+                        type="number" 
+                        value={globalDiscountValue} 
+                        onChange={(e) => setGlobalDiscountValue(parseFloat(e.target.value) || 0)}
+                        className="w-12 bg-transparent text-xs font-black text-amber-400 outline-none p-0 border-none"
+                      />
+                      <button 
+                        onClick={() => setGlobalDiscountType(globalDiscountType === 'percent' ? 'fixed' : 'percent')}
+                        className="ml-1 text-[10px] font-black text-slate-400 hover:text-white"
+                      >
+                        {globalDiscountType === 'percent' ? '%' : '$'}
+                      </button>
+                    </div>
+                  )}
+                  <button 
+                    onClick={() => setGlobalDiscountEnabled(!globalDiscountEnabled)}
+                    className="transition-all active:scale-90"
+                  >
+                    {globalDiscountEnabled ? (
+                      <ToggleRight className="w-8 h-8 text-amber-500" />
+                    ) : (
+                      <ToggleLeft className="w-8 h-8 text-slate-600" />
+                    )}
+                  </button>
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10 group">
              <div className="flex items-center gap-3">
                 <Truck className={`w-5 h-5 ${deliveryEnabled ? 'text-teal-400' : 'text-slate-500'}`} />
@@ -254,15 +368,23 @@ const POS: React.FC<POSProps> = ({
               <span>Subtotal</span>
               <span className="text-white">${subtotal.toFixed(2)}</span>
             </div>
+            {showDiscountControls && globalDiscountAmount > 0 && (
+              <div className="flex justify-between text-amber-400 italic">
+                <span>Global Discount</span>
+                <span>-${globalDiscountAmount.toFixed(2)}</span>
+              </div>
+            )}
             {deliveryEnabled && (
               <div className="flex justify-between text-teal-400">
                 <span>Delivery Fee</span>
-                <span>${deliveryPrice.toFixed(2)}</span>
+                <span>+${deliveryPrice.toFixed(2)}</span>
               </div>
             )}
             <div className="flex justify-between text-2xl font-black text-white pt-2 border-t border-white/10 mt-2">
               <span className="italic">TOTAL</span>
-              <span className="text-teal-400 font-mono tracking-tighter">${total.toFixed(2)}</span>
+              <span className="text-teal-400 font-mono tracking-tighter">
+                ${(showDiscountControls ? total : subtotal + (deliveryEnabled ? deliveryPrice : 0)).toFixed(2)}
+              </span>
             </div>
           </div>
 
@@ -287,7 +409,6 @@ const POS: React.FC<POSProps> = ({
         </div>
       </div>
 
-      {/* Success Receipt Modal */}
       {completedSale && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-[100] p-4 overflow-y-auto">
           <div className="max-w-md w-full animate-in zoom-in-95 duration-300">
