@@ -1,4 +1,16 @@
 
+export type UserRole = 'ADMIN' | 'STAFF';
+
+export interface User {
+  id: string;
+  username: string;
+  name: string;
+  role: UserRole;
+  avatar?: string;
+  lastLogin?: number;
+  pin: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -29,6 +41,7 @@ export interface Sale {
   totalDiscount: number;
   total: number;
   paymentMethod: 'Cash' | 'Card';
+  processedBy?: string; // User ID
 }
 
 export interface InventoryLog {
