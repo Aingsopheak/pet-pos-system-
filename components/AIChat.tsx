@@ -1,15 +1,16 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Sparkles, BrainCircuit, Lightbulb, MessageSquare } from 'lucide-react';
+import { Send, Sparkles, BrainCircuit, Lightbulb, MessageSquare, WifiOff } from 'lucide-react';
 import { getInventoryInsights, getChatResponse } from '../services/geminiService';
 import { Product, Sale } from '../types';
 
 interface AIChatProps {
   products: Product[];
   sales: Sale[];
+  isOnline: boolean;
 }
 
-const AIChat: React.FC<AIChatProps> = ({ products, sales }) => {
+const AIChat: React.FC<AIChatProps> = ({ products, sales, isOnline }) => {
   const [messages, setMessages] = useState<{ role: 'user' | 'model', parts: string }[]>([
     { role: 'model', parts: 'Hello! I am your PawPrint Business Advisor. I have analyzed your current inventory and sales. How can I help you optimize your store today?' }
   ]);
@@ -22,13 +23,14 @@ const AIChat: React.FC<AIChatProps> = ({ products, sales }) => {
   useEffect(() => {
     // Initial inventory insight
     const fetchInsights = async () => {
+      if (!isOnline) return;
       setInsightLoading(true);
       const text = await getInventoryInsights(products, sales);
       setInsights(text);
       setInsightLoading(false);
     };
     fetchInsights();
-  }, []);
+  }, [isOnline]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -38,7 +40,7 @@ const AIChat: React.FC<AIChatProps> = ({ products, sales }) => {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || loading) return;
+    if (!input.trim() || loading || !isOnline) return;
 
     const userMessage = input;
     setInput('');
@@ -61,7 +63,14 @@ const AIChat: React.FC<AIChatProps> = ({ products, sales }) => {
     <div className="h-full bg-slate-100 p-4 md:p-6 flex flex-col md:flex-row gap-6 overflow-hidden">
       {/* Sidebar: AI Insights */}
       <div className="w-full md:w-80 space-y-6 flex-shrink-0">
-        <div className="bg-gradient-to-br from-teal-600 to-teal-800 p-6 rounded-2xl text-white shadow-lg">
+        <div className="bg-gradient-to-br from-teal-600 to-teal-800 p-6 rounded-2xl text-white shadow-lg relative overflow-hidden">
+          {!isOnline && (
+            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px] z-10 flex flex-col items-center justify-center text-center p-4">
+               <WifiOff className="w-8 h-8 text-amber-400 mb-2" />
+               <p className="text-[10px] font-black uppercase tracking-widest text-white">Insights Unavailable</p>
+               <p className="text-[8px] text-teal-100 mt-1">Connect to internet to refresh AI analysis</p>
+            </div>
+          )}
           <div className="flex items-center gap-2 mb-4">
             <Sparkles className="w-5 h-5 text-teal-300" />
             <h3 className="font-bold text-lg">Smart Insights</h3>
@@ -74,17 +83,18 @@ const AIChat: React.FC<AIChatProps> = ({ products, sales }) => {
             </div>
           ) : (
             <div className="text-sm leading-relaxed opacity-90 whitespace-pre-line prose-invert">
-              {insights}
+              {isOnline ? insights || "Analysis ready for refresh." : "Analysis currently stale."}
             </div>
           )}
           <button 
+            disabled={!isOnline || insightLoading}
             onClick={async () => {
                 setInsightLoading(true);
                 const text = await getInventoryInsights(products, sales);
                 setInsights(text);
                 setInsightLoading(false);
             }}
-            className="mt-6 w-full py-2 bg-teal-500/30 hover:bg-teal-500/50 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2"
+            className="mt-6 w-full py-2 bg-teal-500/30 hover:bg-teal-500/50 disabled:opacity-30 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2"
           >
             <BrainCircuit className="w-4 h-4" />
             Refresh Analysis
@@ -100,8 +110,9 @@ const AIChat: React.FC<AIChatProps> = ({ products, sales }) => {
             {quickTips.map((tip, i) => (
               <li key={i}>
                 <button 
+                  disabled={!isOnline}
                   onClick={() => setInput(tip)}
-                  className="w-full text-left text-xs p-2 rounded-lg hover:bg-slate-50 text-slate-600 hover:text-teal-600 border border-transparent hover:border-slate-200 transition-all"
+                  className="w-full text-left text-xs p-2 rounded-lg hover:bg-slate-50 text-slate-600 hover:text-teal-600 border border-transparent hover:border-slate-200 transition-all disabled:opacity-40"
                 >
                   {tip}
                 </button>
@@ -112,7 +123,17 @@ const AIChat: React.FC<AIChatProps> = ({ products, sales }) => {
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+      <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden relative">
+        {!isOnline && (
+          <div className="absolute inset-x-0 top-0 bottom-[88px] bg-slate-50/60 backdrop-blur-[1px] z-10 flex flex-col items-center justify-center text-center p-8">
+             <div className="w-16 h-16 bg-white rounded-3xl shadow-xl flex items-center justify-center mb-4 text-slate-400">
+                <WifiOff className="w-8 h-8" />
+             </div>
+             <h4 className="text-lg font-black text-slate-800 italic">AI ASSISTANT IS OFFLINE</h4>
+             <p className="text-sm text-slate-500 max-w-xs mt-2 font-medium">Chat requires an active internet connection to communicate with our expert systems.</p>
+          </div>
+        )}
+
         <div className="p-4 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-teal-100 text-teal-600 rounded-full flex items-center justify-center">
@@ -120,7 +141,9 @@ const AIChat: React.FC<AIChatProps> = ({ products, sales }) => {
             </div>
             <div>
               <h3 className="font-bold text-slate-800">Business Assistant</h3>
-              <p className="text-[10px] text-green-500 font-bold uppercase tracking-wider">Online & Analyzing</p>
+              <p className={`text-[10px] font-bold uppercase tracking-wider ${isOnline ? 'text-green-500' : 'text-slate-400'}`}>
+                {isOnline ? 'Online & Analyzing' : 'Disconnected'}
+              </p>
             </div>
           </div>
         </div>
@@ -151,25 +174,26 @@ const AIChat: React.FC<AIChatProps> = ({ products, sales }) => {
           )}
         </div>
 
-        <div className="p-4 border-t border-slate-100">
+        <div className="p-4 border-t border-slate-100 bg-white">
           <form onSubmit={handleSend} className="relative">
             <input 
               type="text" 
-              placeholder="Ask anything about your store..."
-              className="w-full pl-4 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none text-sm"
+              disabled={!isOnline}
+              placeholder={isOnline ? "Ask anything about your store..." : "Connect to internet to chat"}
+              className="w-full pl-4 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none text-sm disabled:bg-slate-100 disabled:cursor-not-allowed"
               value={input}
               onChange={(e) => setInput(e.target.value)}
             />
             <button 
               type="submit"
-              disabled={loading || !input.trim()}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:bg-slate-300 transition-all"
+              disabled={loading || !input.trim() || !isOnline}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:bg-slate-300 transition-all shadow-sm"
             >
               <Send className="w-4 h-4" />
             </button>
           </form>
           <p className="text-[10px] text-center text-slate-400 mt-2">
-            AI recommendations are based on your inventory data. Always verify critical business decisions.
+            {isOnline ? "AI recommendations are based on your inventory data." : "AI Assistant is currently paused while offline."}
           </p>
         </div>
       </div>

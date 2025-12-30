@@ -1,6 +1,10 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, Plus, Minus, Trash2, CreditCard, Banknote, PackageOpen, ShoppingCart, ScanLine, CheckCircle2, Truck, ToggleLeft, ToggleRight, Tag, Eye, EyeOff, Zap } from 'lucide-react';
+import { 
+  Search, Plus, Minus, Trash2, CreditCard, Banknote, PackageOpen, 
+  ShoppingCart, ScanLine, CheckCircle2, Truck, ToggleLeft, ToggleRight, 
+  Tag, Eye, EyeOff, Zap, Camera, X, Keyboard, AlertCircle, CheckCircle
+} from 'lucide-react';
 import { Product, CartItem, Sale } from '../types';
 import { CATEGORIES } from '../constants';
 import Receipt from './Receipt';
@@ -22,6 +26,11 @@ interface POSProps {
   setGlobalDiscountType: (type: 'percent' | 'fixed') => void;
   globalDiscountValue: number;
   setGlobalDiscountValue: (value: number) => void;
+}
+
+interface Notification {
+  message: string;
+  type: 'success' | 'error' | 'info';
 }
 
 const POS: React.FC<POSProps> = ({ 
@@ -47,14 +56,113 @@ const POS: React.FC<POSProps> = ({
   const [activeCategory, setActiveCategory] = useState('All');
   const [completedSale, setCompletedSale] = useState<Sale | null>(null);
   const [showDiscountControls, setShowDiscountControls] = useState(true);
+  const [notification, setNotification] = useState<Notification | null>(null);
+  
+  // Scanner state
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scannerError, setScannerError] = useState<string | null>(null);
+  const [isSuccessFlash, setIsSuccessFlash] = useState(false);
+  const [lastScannedItem, setLastScannedItem] = useState<Product | null>(null);
   
   const barcodeRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const notificationTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!completedSale) {
+    if (!completedSale && !isScannerOpen) {
       barcodeRef.current?.focus();
     }
-  }, [completedSale]);
+  }, [completedSale, isScannerOpen]);
+
+  const showNotification = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    if (notificationTimeoutRef.current) window.clearTimeout(notificationTimeoutRef.current);
+    setNotification({ message, type });
+    notificationTimeoutRef.current = window.setTimeout(() => setNotification(null), 3000);
+  };
+
+  // Camera Scanner Logic
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    let interval: number | null = null;
+
+    const startScanner = async () => {
+      setScannerError(null);
+      setLastScannedItem(null);
+      try {
+        // Fix: Use spread with any cast for non-standard focusMode to bypass strict MediaTrackConstraints check
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            facingMode: 'environment', 
+            width: { ideal: 1280 }, 
+            height: { ideal: 720 },
+            ...({ focusMode: 'continuous' } as any)
+          } 
+        });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+
+        if ('BarcodeDetector' in window) {
+          const barcodeDetector = new (window as any).BarcodeDetector({
+            formats: ['code_128', 'ean_13', 'qr_code', 'ean_8', 'upc_a', 'upc_e'],
+          });
+
+          interval = window.setInterval(async () => {
+            if (videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
+              try {
+                const barcodes = await barcodeDetector.detect(videoRef.current);
+                if (barcodes.length > 0) {
+                  const detectedBarcode = barcodes[0].rawValue;
+                  const handled = handleBarcodeDetected(detectedBarcode);
+                  if (handled) {
+                    setIsSuccessFlash(true);
+                    setTimeout(() => {
+                      setIsSuccessFlash(false);
+                      setIsScannerOpen(false);
+                    }, 500);
+                  }
+                }
+              } catch (e) {
+                console.error("Detection error:", e);
+              }
+            }
+          }, 300);
+        } else {
+          setScannerError("Native Barcode Detection is not supported in this browser.");
+        }
+      } catch (err) {
+        setScannerError("Unable to access camera. Please check permissions.");
+        console.error("Camera access denied:", err);
+      }
+    };
+
+    if (isScannerOpen) {
+      startScanner();
+    }
+
+    return () => {
+      if (stream) stream.getTracks().forEach(track => track.stop());
+      if (interval) clearInterval(interval);
+    };
+  }, [isScannerOpen]);
+
+  const handleBarcodeDetected = (code: string): boolean => {
+    const product = products.find(p => p.barcode === code);
+    if (product) {
+      if (product.stock > 0) {
+        addToCart(product);
+        setLastScannedItem(product);
+        showNotification(`Added ${product.name}`, 'success');
+        return true;
+      } else {
+        showNotification(`${product.name} is out of stock!`, 'error');
+        return false;
+      }
+    } else {
+      showNotification(`Product not found: ${code}`, 'error');
+      return false;
+    }
+  };
 
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
@@ -66,16 +174,7 @@ const POS: React.FC<POSProps> = ({
 
   const handleBarcodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const product = products.find(p => p.barcode === barcodeInput);
-    if (product) {
-      if (product.stock > 0) {
-        addToCart(product);
-      } else {
-        alert(`${product.name} is out of stock!`);
-      }
-    } else {
-      alert(`No product found with barcode: ${barcodeInput}`);
-    }
+    handleBarcodeDetected(barcodeInput);
     setBarcodeInput('');
   };
 
@@ -92,7 +191,6 @@ const POS: React.FC<POSProps> = ({
     if (item.discountType === 'percent') {
       return baseTotal * (1 - item.discountValue / 100);
     } else {
-      // Assuming fixed catalog discount is per unit
       return Math.max(0, (item.price - item.discountValue) * item.quantity);
     }
   };
@@ -111,22 +209,41 @@ const POS: React.FC<POSProps> = ({
 
   return (
     <div className="h-full flex flex-col md:flex-row bg-slate-100 overflow-hidden relative">
+      {/* Toast Notification */}
+      {notification && (
+        <div className={`fixed top-24 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-top-4 duration-300 ${
+          notification.type === 'success' ? 'bg-teal-600 text-white' : 
+          notification.type === 'error' ? 'bg-red-600 text-white' : 
+          'bg-slate-800 text-white'
+        }`}>
+          {notification.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+          <span className="text-sm font-bold">{notification.message}</span>
+        </div>
+      )}
+
       {/* Product Catalog */}
       <div className="flex-1 flex flex-col p-4 md:p-6 overflow-hidden">
         <div className="flex flex-col xl:flex-row gap-4 mb-6">
-          <div className="flex-shrink-0">
-            <form onSubmit={handleBarcodeSubmit} className="relative group">
+          <div className="flex-shrink-0 flex gap-2">
+            <form onSubmit={handleBarcodeSubmit} className="relative group flex-1 xl:w-48">
               <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 text-teal-500 w-5 h-5 group-focus-within:scale-110 transition-transform" />
               <input
                 ref={barcodeRef}
                 type="text"
-                placeholder="Scan Barcode..."
-                className="w-full xl:w-48 pl-10 pr-4 py-3 bg-teal-50 border-2 border-teal-100 shadow-sm rounded-xl focus:border-teal-500 focus:ring-0 outline-none font-mono text-sm"
+                placeholder="Type Barcode..."
+                className="w-full pl-10 pr-4 py-3 bg-white border-2 border-slate-100 shadow-sm rounded-xl focus:border-teal-500 focus:ring-0 outline-none font-mono text-sm"
                 value={barcodeInput}
                 onChange={(e) => setBarcodeInput(e.target.value)}
               />
-              <span className="absolute -top-2 right-2 px-1.5 bg-teal-500 text-[8px] text-white rounded-md font-bold uppercase tracking-widest">Scanner</span>
+              <span className="absolute -top-2 right-2 px-1.5 bg-slate-400 text-[8px] text-white rounded-md font-bold uppercase tracking-widest">Manual</span>
             </form>
+            <button 
+              onClick={() => setIsScannerOpen(true)}
+              className="px-4 py-3 bg-teal-600 text-white rounded-xl shadow-lg shadow-teal-100 hover:bg-teal-700 transition-all flex items-center gap-2 group active:scale-95"
+            >
+              <Camera className="w-5 h-5 group-hover:rotate-12 transition-transform" />
+              <span className="hidden sm:inline font-bold text-sm">Scan</span>
+            </button>
           </div>
 
           <div className="relative flex-1">
@@ -153,7 +270,6 @@ const POS: React.FC<POSProps> = ({
 
         <div className="flex-1 overflow-y-auto grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-10 pr-2 scrollbar-thin scrollbar-thumb-slate-200">
           {filteredProducts.map(product => {
-            // Hide discount UI if catalog discount is 0
             const hasCatalogDiscount = product.discountValue !== undefined && product.discountValue > 0;
             const showDiscountUI = showDiscountControls && hasCatalogDiscount;
 
@@ -167,7 +283,10 @@ const POS: React.FC<POSProps> = ({
               <div 
                 key={product.id}
                 onClick={() => product.stock > 0 && addToCart(product)}
-                className={`group bg-white rounded-2xl shadow-sm border border-transparent hover:border-teal-500 p-3 transition-all cursor-pointer flex flex-col h-full ${product.stock === 0 ? 'opacity-60 grayscale cursor-not-allowed' : 'active:scale-95'}`}
+                className={`group bg-white rounded-2xl shadow-sm border p-3 transition-all cursor-pointer flex flex-col h-full 
+                  ${product.stock === 0 ? 'opacity-60 grayscale cursor-not-allowed' : 'active:scale-95'}
+                  ${showDiscountUI ? 'border-amber-400 bg-amber-50/20 ring-1 ring-amber-400' : 'border-transparent hover:border-teal-500'}
+                `}
               >
                 <div className="aspect-square rounded-xl overflow-hidden bg-slate-50 mb-3 relative">
                   <img 
@@ -176,9 +295,9 @@ const POS: React.FC<POSProps> = ({
                     className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                   />
                   {showDiscountUI && (
-                    <div className="absolute top-2 left-2 bg-amber-500 text-white text-[8px] font-black px-2 py-1 rounded-lg flex items-center gap-1 shadow-lg animate-pulse">
-                      <Zap className="w-2.5 h-2.5 fill-current" />
-                      DISCOUNT
+                    <div className="absolute top-2 left-2 bg-amber-500 text-white text-[10px] font-black px-2 py-1 rounded-lg flex items-center gap-1 shadow-lg animate-bounce z-10">
+                      <Tag className="w-3 h-3 fill-current" />
+                      {product.discountType === 'percent' ? `-${product.discountValue}%` : `-$${product.discountValue}`}
                     </div>
                   )}
                   <div className="absolute bottom-1 right-1 bg-white/90 backdrop-blur-sm px-1.5 py-0.5 rounded text-[8px] font-mono font-bold text-slate-500">
@@ -193,7 +312,7 @@ const POS: React.FC<POSProps> = ({
                     {showDiscountUI && (
                       <span className="text-[10px] text-slate-400 line-through decoration-red-400/50">${product.price.toFixed(2)}</span>
                     )}
-                    <span className="text-teal-600 font-black text-base">
+                    <span className={`font-black text-base ${showDiscountUI ? 'text-amber-600' : 'text-teal-600'}`}>
                       ${(showDiscountControls ? salePrice : product.price).toFixed(2)}
                     </span>
                   </div>
@@ -281,7 +400,6 @@ const POS: React.FC<POSProps> = ({
                     </div>
                   </div>
                   
-                  {/* Visual indication of fixed catalog discount if active */}
                   {showItemDiscount && (
                     <div className="text-[10px] font-bold text-teal-600 flex items-center gap-1 mt-1 bg-teal-50 w-fit px-1.5 py-0.5 rounded">
                       <Zap className="w-3 h-3 fill-current" />
@@ -409,6 +527,71 @@ const POS: React.FC<POSProps> = ({
         </div>
       </div>
 
+      {/* Barcode Scanner View */}
+      {isScannerOpen && (
+        <div className="fixed inset-0 bg-slate-900/95 flex flex-col items-center justify-center z-[110] p-6 backdrop-blur-xl animate-in fade-in duration-300">
+           {/* Success Flash Effect */}
+           {isSuccessFlash && <div className="fixed inset-0 bg-white z-[120] animate-out fade-out duration-500" />}
+
+           <div className="relative w-full max-w-lg aspect-[4/3] rounded-[40px] overflow-hidden border-4 border-teal-500 shadow-2xl bg-black">
+              <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
+              
+              {/* Scanning UI Overlay */}
+              <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
+                 <div className="w-72 h-48 border-2 border-teal-400/50 rounded-3xl flex items-center justify-center relative overflow-hidden">
+                    <div className="absolute inset-0 bg-teal-500/5 animate-pulse" />
+                    <div className="w-full h-0.5 bg-red-500/80 shadow-[0_0_15px_rgba(239,68,68,0.8)] absolute top-0 animate-[scan_3s_ease-in-out_infinite]" />
+                 </div>
+                 <p className="mt-12 text-teal-400 font-black text-sm uppercase tracking-[0.4em] drop-shadow-md animate-pulse">Position Barcode in Center</p>
+              </div>
+
+              {/* Feedback Preview for last scanned item */}
+              {lastScannedItem && (
+                <div className="absolute bottom-8 left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur-sm px-6 py-3 rounded-2xl shadow-xl flex items-center gap-4 animate-in slide-in-from-bottom-4 duration-300 min-w-[280px]">
+                  <img src={lastScannedItem.image} className="w-12 h-12 rounded-lg object-cover" alt="" />
+                  <div>
+                    <h4 className="text-xs font-black text-slate-800 truncate uppercase tracking-tight">{lastScannedItem.name}</h4>
+                    <p className="text-[10px] font-bold text-teal-600">${lastScannedItem.price.toFixed(2)} • ADDED</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Error UI */}
+              {scannerError && (
+                <div className="absolute inset-x-0 bottom-0 p-8 bg-black/80 backdrop-blur-md text-center">
+                  <p className="text-red-400 text-sm font-bold mb-4">{scannerError}</p>
+                  <button 
+                    onClick={() => { setIsScannerOpen(false); barcodeRef.current?.focus(); }}
+                    className="flex items-center justify-center gap-2 px-6 py-3 bg-white text-slate-900 rounded-xl font-black text-xs uppercase mx-auto"
+                  >
+                    <Keyboard className="w-4 h-4" />
+                    Switch to Manual Input
+                  </button>
+                </div>
+              )}
+
+              <button 
+                onClick={() => setIsScannerOpen(false)} 
+                className="absolute top-8 right-8 p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-colors backdrop-blur-md active:scale-90"
+              >
+                <X className="w-8 h-8" />
+              </button>
+           </div>
+           
+           <div className="mt-8 flex flex-col items-center gap-4 text-center max-w-xs">
+              <h3 className="text-white font-black italic text-xl">SMART SCANNER</h3>
+              <p className="text-slate-400 text-xs font-medium leading-relaxed">Ensure the barcode is well-lit and aligned within the guide frame.</p>
+              <button 
+                onClick={() => { setIsScannerOpen(false); barcodeRef.current?.focus(); }}
+                className="mt-2 text-teal-400 hover:text-teal-300 font-bold text-xs uppercase tracking-widest flex items-center gap-2"
+              >
+                <Keyboard className="w-4 h-4" />
+                Manual Entry Instead
+              </button>
+           </div>
+        </div>
+      )}
+
       {completedSale && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-[100] p-4 overflow-y-auto">
           <div className="max-w-md w-full animate-in zoom-in-95 duration-300">
@@ -429,6 +612,13 @@ const POS: React.FC<POSProps> = ({
           </div>
         </div>
       )}
+
+      <style>{`
+        @keyframes scan {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(192px); }
+        }
+      `}</style>
     </div>
   );
 };

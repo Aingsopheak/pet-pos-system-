@@ -22,6 +22,54 @@ interface InventoryProps {
 type SortKey = 'name' | 'barcode' | 'category' | 'stock' | 'price' | 'discountValue';
 type SortDirection = 'asc' | 'desc' | null;
 
+/**
+ * A responsive image component that handles loading states, 
+ * error fallbacks, and optimized rendering.
+ */
+const ResponsiveImage: React.FC<{ 
+  src?: string; 
+  alt?: string; 
+  className?: string; 
+  fallbackIcon?: React.ReactNode;
+}> = ({ src, alt, className = "", fallbackIcon }) => {
+  const [error, setError] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    setError(false);
+    setLoaded(false);
+  }, [src]);
+
+  const defaultIcon = fallbackIcon || <ImageIcon className="w-1/2 h-1/2 text-slate-300 opacity-50" />;
+
+  if (!src || error) {
+    return (
+      <div className={`flex items-center justify-center bg-slate-100 ${className}`}>
+        {defaultIcon}
+      </div>
+    );
+  }
+
+  return (
+    <div className={`relative overflow-hidden bg-slate-100 ${className}`}>
+      {!loaded && (
+        <div className="absolute inset-0 flex items-center justify-center animate-pulse">
+          <ImageIcon className="w-1/3 h-1/3 text-slate-200" />
+        </div>
+      )}
+      <img
+        src={src}
+        alt={alt}
+        loading="lazy"
+        decoding="async"
+        onLoad={() => setLoaded(true)}
+        onError={() => setError(true)}
+        className={`w-full h-full object-cover transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+      />
+    </div>
+  );
+};
+
 const Inventory: React.FC<InventoryProps> = ({ 
   products, onUpdate, onDelete, onAdd, onBulkImport, stockThreshold, setStockThreshold, isAdmin 
 }) => {
@@ -339,7 +387,12 @@ const Inventory: React.FC<InventoryProps> = ({
                 <tr key={product.id} className="hover:bg-slate-50 transition-colors group">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <img src={product.image} className="w-8 h-8 rounded-lg bg-slate-100 object-cover border border-slate-200 shadow-sm" />
+                      <ResponsiveImage 
+                        src={product.image} 
+                        alt={product.name} 
+                        className="w-8 h-8 rounded-lg border border-slate-200 shadow-sm"
+                        fallbackIcon={<ImageIcon className="w-4 h-4 text-slate-300 opacity-40" />}
+                      />
                       <span className="font-semibold text-slate-800 text-sm">{product.name}</span>
                     </div>
                   </td>
@@ -471,15 +524,17 @@ const Inventory: React.FC<InventoryProps> = ({
             <form onSubmit={handleSave} className="p-8 space-y-6 max-h-[70vh] overflow-y-auto">
               <div className="flex flex-col items-center gap-4">
                 <div className="relative group cursor-pointer" onClick={() => photoInputRef.current?.click()}>
-                   <div className="w-24 h-24 rounded-3xl bg-slate-100 border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden hover:border-teal-500 transition-all shadow-inner group">
-                      {formImage ? (
-                        <img src={formImage} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="text-center text-slate-400">
-                          <ImageIcon className="w-8 h-8 mx-auto mb-1 opacity-50" />
-                          <span className="text-[8px] font-black uppercase">Upload</span>
-                        </div>
-                      )}
+                   <div className="w-24 h-24 rounded-3xl border-2 border-dashed border-slate-300 overflow-hidden hover:border-teal-500 transition-all shadow-inner group">
+                      <ResponsiveImage 
+                        src={formImage} 
+                        className="w-full h-full"
+                        fallbackIcon={
+                          <div className="text-center text-slate-400">
+                            <ImageIcon className="w-8 h-8 mx-auto mb-1 opacity-50" />
+                            <span className="text-[8px] font-black uppercase">Upload</span>
+                          </div>
+                        }
+                      />
                       <div className="absolute inset-0 bg-black/40 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-3xl">
                         <Camera className="w-6 h-6" />
                       </div>

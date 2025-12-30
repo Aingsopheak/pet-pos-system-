@@ -42,6 +42,7 @@ export interface Sale {
   total: number;
   paymentMethod: 'Cash' | 'Card';
   processedBy?: string; // User ID
+  syncStatus?: 'synced' | 'pending';
 }
 
 export interface InventoryLog {

@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { User, UserRole } from '../types';
-import { Shield, User as UserIcon, Plus, Trash2, Edit2, ShieldAlert, BadgeCheck, X, Key, Eye, EyeOff, Camera, Image as ImageIcon } from 'lucide-react';
+import { Shield, User as UserIcon, Plus, Trash2, Edit2, ShieldAlert, BadgeCheck, X, Key, Eye, EyeOff, Camera, Image as ImageIcon, AlertTriangle, RefreshCw } from 'lucide-react';
 
 interface UsersProps {
   users: User[];
@@ -13,6 +13,9 @@ const Users: React.FC<UsersProps> = ({ users, setUsers }) => {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showPin, setShowPin] = useState(false);
   const [formAvatar, setFormAvatar] = useState<string>('');
+  const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
+  const [resetPinUserId, setResetPinUserId] = useState<string | null>(null);
+  const [newPin, setNewPin] = useState('');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -68,6 +71,15 @@ const Users: React.FC<UsersProps> = ({ users, setUsers }) => {
     closeModal();
   };
 
+  const handleResetPin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (resetPinUserId && newPin.length >= 4) {
+      setUsers(prev => prev.map(u => u.id === resetPinUserId ? { ...u, pin: newPin } : u));
+      setResetPinUserId(null);
+      setNewPin('');
+    }
+  };
+
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingUser(null);
@@ -75,9 +87,10 @@ const Users: React.FC<UsersProps> = ({ users, setUsers }) => {
     setFormAvatar('');
   };
 
-  const deleteUser = (id: string) => {
-    if (confirm('Are you sure you want to remove this staff member?')) {
-      setUsers(prev => prev.filter(u => u.id !== id));
+  const handleDeleteConfirmed = () => {
+    if (deleteConfirmationId) {
+      setUsers(prev => prev.filter(u => u.id !== deleteConfirmationId));
+      setDeleteConfirmationId(null);
     }
   };
 
@@ -146,12 +159,19 @@ const Users: React.FC<UsersProps> = ({ users, setUsers }) => {
             <div className="flex gap-2">
               <button 
                 onClick={() => { setEditingUser(user); setIsModalOpen(true); }}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-slate-50 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-100 transition-colors"
+                className="flex-[2] flex items-center justify-center gap-2 py-2.5 bg-slate-50 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-100 transition-colors"
               >
                 <Edit2 className="w-4 h-4" /> Edit
               </button>
               <button 
-                onClick={() => deleteUser(user.id)}
+                onClick={() => setResetPinUserId(user.id)}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-amber-50 text-amber-600 rounded-xl text-[10px] font-black uppercase hover:bg-amber-100 transition-colors"
+                title="Reset Security PIN"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> PIN
+              </button>
+              <button 
+                onClick={() => setDeleteConfirmationId(user.id)}
                 className="flex items-center justify-center p-2.5 text-slate-400 hover:text-red-500 transition-colors"
                 title="Remove Member"
               >
@@ -173,7 +193,6 @@ const Users: React.FC<UsersProps> = ({ users, setUsers }) => {
             </div>
             
             <form onSubmit={handleSaveUser} className="p-8 space-y-6 max-h-[70vh] overflow-y-auto">
-              {/* Profile Photo Upload */}
               <div className="flex flex-col items-center gap-4">
                 <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
                    <div className="w-24 h-24 rounded-3xl bg-slate-100 border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden group-hover:border-indigo-500 transition-all shadow-inner">
@@ -244,6 +263,79 @@ const Users: React.FC<UsersProps> = ({ users, setUsers }) => {
                 <button type="submit" className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-black text-sm uppercase transition-all shadow-lg shadow-indigo-200">Save Account</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* PIN Reset Modal */}
+      {resetPinUserId && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[110]">
+          <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-8 text-center">
+              <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Key className="w-8 h-8 text-amber-600" />
+              </div>
+              <h3 className="text-xl font-black text-slate-900 mb-2 italic uppercase tracking-tight">Security Reset</h3>
+              <p className="text-xs text-slate-500 mb-6 font-medium">Resetting Terminal PIN for <span className="text-slate-900 font-bold">@{users.find(u => u.id === resetPinUserId)?.username}</span></p>
+              
+              <form onSubmit={handleResetPin} className="space-y-4">
+                <div className="relative group">
+                  <RefreshCw className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input 
+                    type="password" 
+                    placeholder="New 4-8 Digit PIN"
+                    value={newPin}
+                    onChange={(e) => setNewPin(e.target.value)}
+                    required
+                    autoFocus
+                    className="w-full pl-11 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-amber-500 text-center font-black font-mono tracking-[0.5em] transition-all"
+                  />
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    type="button"
+                    onClick={() => { setResetPinUserId(null); setNewPin(''); }} 
+                    className="flex-1 py-3.5 bg-slate-100 text-slate-700 rounded-2xl font-black text-xs uppercase hover:bg-slate-200 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit"
+                    disabled={newPin.length < 4}
+                    className="flex-[1.5] py-3.5 bg-amber-600 text-white rounded-2xl font-black text-xs uppercase shadow-lg shadow-amber-200 hover:bg-amber-700 transition-all disabled:opacity-50 disabled:shadow-none"
+                  >
+                    Confirm Reset
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmationId && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[110]">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8 text-center animate-in zoom-in-95 duration-200">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle className="w-8 h-8 text-red-600" />
+            </div>
+            <h3 className="text-xl font-black text-slate-900 mb-2 italic uppercase">Remove Staff Member?</h3>
+            <p className="text-sm text-slate-500 mb-8">This action will permanently revoke terminal access for this profile. Are you sure you want to proceed?</p>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setDeleteConfirmationId(null)} 
+                className="flex-1 py-3.5 bg-slate-100 text-slate-700 rounded-2xl font-black text-xs uppercase hover:bg-slate-200 transition-all"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleDeleteConfirmed} 
+                className="flex-1 py-3.5 bg-red-600 text-white rounded-2xl font-black text-xs uppercase shadow-lg shadow-red-200 hover:bg-red-700 transition-all"
+              >
+                Remove Profile
+              </button>
+            </div>
           </div>
         </div>
       )}

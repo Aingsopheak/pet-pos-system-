@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Search, Calendar, CreditCard, Banknote, Eye, ArrowRight, Download, ArrowUpDown, ChevronUp, ChevronDown, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Calendar, CreditCard, Banknote, Eye, ArrowRight, Download, ArrowUpDown, ChevronUp, ChevronDown, Clock, ChevronLeft, ChevronRight, CloudSync, CheckCircle } from 'lucide-react';
 import { Sale } from '../types';
 import Receipt from './Receipt';
 
@@ -101,7 +101,7 @@ const Sales: React.FC<SalesProps> = ({ sales }) => {
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col flex-1 overflow-hidden">
         {/* Scrollable area for the sales table */}
         <div className="flex-1 overflow-auto relative scrollbar-thin">
-          <table className="w-full text-left border-collapse min-w-[900px]">
+          <table className="w-full text-left border-collapse min-w-[1000px]">
             <thead className="sticky top-0 bg-white z-10 shadow-sm border-b border-slate-100">
               <tr className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 <th className="px-6 py-4 bg-white">
@@ -120,6 +120,7 @@ const Sales: React.FC<SalesProps> = ({ sales }) => {
                   </button>
                 </th>
                 <th className="px-6 py-4 bg-white">Method</th>
+                <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4 text-right bg-white">
                   <button onClick={() => handleSort('total')} className="flex items-center gap-1 ml-auto hover:text-teal-600 transition-colors">
                     Total {getSortIcon('total')}
@@ -178,6 +179,17 @@ const Sales: React.FC<SalesProps> = ({ sales }) => {
                       {sale.paymentMethod}
                     </span>
                   </td>
+                  <td className="px-6 py-4">
+                    {sale.syncStatus === 'pending' ? (
+                      <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-tighter text-amber-500 bg-amber-50 px-2 py-0.5 rounded border border-amber-100">
+                        <CloudSync className="w-3 h-3" /> Pending Sync
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-tighter text-green-600 bg-green-50 px-2 py-0.5 rounded border border-green-100">
+                        <CheckCircle className="w-3 h-3" /> Synced
+                      </span>
+                    )}
+                  </td>
                   <td className="px-6 py-4 text-right">
                     <span className="text-sm font-black text-slate-900 tracking-tight">${sale.total.toFixed(2)}</span>
                   </td>
@@ -195,7 +207,7 @@ const Sales: React.FC<SalesProps> = ({ sales }) => {
               ))}
               {paginatedSales.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-24 text-center">
+                  <td colSpan={7} className="py-24 text-center">
                     <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 border border-dashed border-slate-200">
                       <Calendar className="w-8 h-8 text-slate-300" />
                     </div>
